@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drive Gallery</title>
+  <meta
+    name="description"
+    content="A stylish static photo viewer for public Google Drive folders, built with plain HTML, CSS, and JavaScript."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Public Google Drive Photo Viewer</p>
+        <h1 id="page-title">Drive Gallery</h1>
+        <p class="hero-text" id="hero-text">
+          Enter a gallery key, a Google Drive folder ID, or a full folder link to open a public photo collection.
+        </p>
+      </div>
+
+      <div class="hero-card">
+        <form id="lookup-form" class="lookup-form" novalidate>
+          <label class="input-label" for="lookup-input">Gallery key or Google Drive folder link</label>
+          <div class="input-row">
+            <input
+              id="lookup-input"
+              name="lookup"
+              type="text"
+              autocomplete="off"
+              placeholder="Try key123 or paste a Drive folder URL"
+              aria-describedby="helper-text"
+            >
+            <button id="submit-button" type="submit">Open gallery</button>
+          </div>
+          <p class="helper-text" id="helper-text">
+            The folder must be shared as <strong>Anyone with the link</strong>.
+          </p>
+        </form>
+
+        <div class="quick-actions">
+          <div class="action-copy">
+            <span class="action-title">Quick start</span>
+            <span class="action-subtitle">Paste a Drive folder link or use one of your published keys.</span>
+          </div>
+          <!-- <div id="sample-keys" class="sample-keys" aria-live="polite"></div> -->
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="status-panel">
+        <div class="status-copy">
+          <p class="section-label">Current folder</p>
+          <h2 id="gallery-title">Waiting for a folder</h2>
+          <p id="status-message" class="status-message">
+            Add your Google API key in <code>config.js</code>, update <code>data/folders.json</code>, then open a folder.
+          </p>
+        </div>
+
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span class="stat-label">Lookup</span>
+            <strong id="lookup-pill" class="stat-value">Not set</strong>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Images</span>
+            <strong id="image-count" class="stat-value">0</strong>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Viewer</span>
+            <strong class="stat-value">Lightbox ready</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="gallery-panel">
+        <div class="gallery-head">
+          <div>
+            <p class="section-label">Photo wall</p>
+            <h3>Moments from your mapped Google Drive folders</h3>
+          </div>
+          <button id="refresh-button" class="ghost-button" type="button">Refresh</button>
+        </div>
+
+        <div id="notice-banner" class="notice-banner" hidden></div>
+
+        <div id="loading-state" class="empty-state" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Loading images from Google Drive...</p>
+        </div>
+
+        <div id="empty-state" class="empty-state">
+          <p class="empty-kicker">No gallery loaded yet</p>
+          <h4>Use a key, folder ID, or full folder link</h4>
+          <p>
+            This page is built for public Drive folders. Update the mapping file and API key, then share the page with your audience.
+          </p>
+        </div>
+
+        <div id="gallery-grid" class="gallery-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="setup-panel">
+        <p class="section-label">How it works</p>
+        <div class="setup-grid">
+          <article>
+            <h4>1. Publish your folders</h4>
+            <p>Share each Google Drive folder as "Anyone with the link" so the static site can read the images.</p>
+          </article>
+          <article>
+            <h4>2. Map short keys</h4>
+            <p>Update <code>data/folders.json</code> so friendly keys like <code>summer-2026</code> point to real folder IDs.</p>
+          </article>
+          <article>
+            <h4>3. Deploy on GitHub Pages</h4>
+            <p>Push the site to GitHub, enable Pages, and restrict your Google API key to your GitHub Pages domain.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="lightbox" class="lightbox">
+    <button id="close-lightbox" class="lightbox-close" type="button" aria-label="Close viewer">Close</button>
+    <button id="prev-photo" class="lightbox-nav lightbox-nav-left" type="button" aria-label="Previous photo">Prev</button>
+    <figure class="lightbox-figure">
+      <img id="lightbox-image" alt="">
+      <figcaption>
+        <span id="lightbox-caption">Photo</span>
+        <span id="lightbox-position">1 / 1</span>
+      </figcaption>
+    </figure>
+    <button id="next-photo" class="lightbox-nav lightbox-nav-right" type="button" aria-label="Next photo">Next</button>
+  </dialog>
+
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
