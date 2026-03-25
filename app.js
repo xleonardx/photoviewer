@@ -6,7 +6,8 @@ const state = {
   currentFolderId: "",
   currentFolderLabel: "",
   images: [],
-  activeIndex: 0
+  activeIndex: 0,
+  lightboxOpen: false
 };
 
 const elements = {
@@ -18,8 +19,6 @@ const elements = {
   heroText: document.getElementById("hero-text"),
   galleryTitle: document.getElementById("gallery-title"),
   statusMessage: document.getElementById("status-message"),
-  lookupPill: document.getElementById("lookup-pill"),
-  imageCount: document.getElementById("image-count"),
   sampleKeys: document.getElementById("sample-keys"),
   loadingState: document.getElementById("loading-state"),
   emptyState: document.getElementById("empty-state"),
@@ -71,26 +70,23 @@ function bindEvents() {
   elements.closeLightbox.addEventListener("click", closeLightbox);
   elements.prevPhoto.addEventListener("click", showPreviousPhoto);
   elements.nextPhoto.addEventListener("click", showNextPhoto);
+
   elements.lightbox.addEventListener("click", (event) => {
-    if (event.target === elements.lightbox) {
+    if (event.target.hasAttribute("data-close-lightbox")) {
       closeLightbox();
     }
   });
 
   document.addEventListener("keydown", (event) => {
-    if (!elements.lightbox.open) {
+    if (!state.lightboxOpen) {
       return;
     }
 
     if (event.key === "Escape") {
       closeLightbox();
-    }
-
-    if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft") {
       showPreviousPhoto();
-    }
-
-    if (event.key === "ArrowRight") {
+    } else if (event.key === "ArrowRight") {
       showNextPhoto();
     }
   });
@@ -98,6 +94,10 @@ function bindEvents() {
 
 async function loadFolderMap() {
   try {
+    if (window.location.protocol === "file:") {
+      throw new Error("Open this app through IIS, localhost, or GitHub Pages. Loading keys does not work from file://.");
+    }
+
     const response = await fetch("./data/folders.json", { cache: "no-store" });
     if (!response.ok) {
       throw new Error("Could not read data/folders.json.");
@@ -115,10 +115,6 @@ function populateSampleKeys() {
   elements.sampleKeys.innerHTML = "";
 
   if (!keys.length) {
-    const placeholder = document.createElement("span");
-    placeholder.className = "helper-text";
-    placeholder.textContent = "No mapped keys yet. Add entries in data/folders.json.";
-    elements.sampleKeys.appendChild(placeholder);
     return;
   }
 
@@ -157,7 +153,7 @@ async function runLookup(rawLookup, options = {}) {
   const lookup = rawLookup.trim();
 
   if (!lookup) {
-    showNotice("Enter a short key, raw folder ID, or Google Drive folder link.");
+    showNotice("Enter a key, folder ID, or Google Drive folder link.");
     return;
   }
 
@@ -168,14 +164,13 @@ async function runLookup(rawLookup, options = {}) {
 
   const resolved = resolveFolderLookup(lookup);
   if (!resolved.folderId) {
-    showNotice("I could not resolve that value into a Google Drive folder ID.");
+    showNotice("Key not found. Check the exact key in data/folders.json, or paste a full Drive folder link.");
     return;
   }
 
   state.currentLookup = lookup;
   state.currentFolderId = resolved.folderId;
   state.currentFolderLabel = resolved.label || "";
-  updateLookupSummary(resolved.lookupLabel);
   setLoading(true);
   elements.galleryGrid.innerHTML = "";
   hideNotice();
@@ -188,13 +183,10 @@ async function runLookup(rawLookup, options = {}) {
 
     state.images = images;
     state.activeIndex = 0;
-    const folderName = state.currentFolderLabel || folderMetadata.name || "Untitled folder";
 
+    const folderName = state.currentFolderLabel || folderMetadata.name || "Untitled folder";
     elements.galleryTitle.textContent = folderName;
-    elements.statusMessage.textContent = folderMetadata.description
-      ? folderMetadata.description
-      : `${images.length} public image${images.length === 1 ? "" : "s"} available in this Google Drive folder.`;
-    elements.imageCount.textContent = String(images.length);
+    elements.statusMessage.textContent = `${images.length} photo${images.length === 1 ? "" : "s"} loaded.`;
     renderGallery(images);
 
     if (!images.length) {
@@ -208,9 +200,8 @@ async function runLookup(rawLookup, options = {}) {
     }
   } catch (error) {
     state.images = [];
-    elements.imageCount.textContent = "0";
-    elements.galleryTitle.textContent = state.currentFolderLabel || "Unable to load folder";
-    elements.statusMessage.textContent = "Check the folder visibility, folder ID, and API key settings.";
+    elements.galleryTitle.textContent = state.currentFolderLabel || "Unable to load gallery";
+    elements.statusMessage.textContent = "Check the folder sharing settings and API key restrictions.";
     renderGallery([]);
     showNotice(error.message || "Google Drive could not load that folder.");
   } finally {
@@ -220,14 +211,17 @@ async function runLookup(rawLookup, options = {}) {
 
 function resolveFolderLookup(input) {
   const normalized = input.trim();
-  const mappedEntry = state.folderMap[normalized];
+  const normalizedKey = normalizeKey(normalized);
+  const mappedEntries = Object.entries(state.folderMap);
 
-  if (mappedEntry && mappedEntry.folderId) {
-    return {
-      folderId: mappedEntry.folderId,
-      label: mappedEntry.label || "",
-      lookupLabel: `Key: ${normalized}`
-    };
+  const exactMatch = state.folderMap[normalized];
+  if (exactMatch && exactMatch.folderId) {
+    return buildResolvedLookup(exactMatch, normalized, `Key: ${normalized}`);
+  }
+
+  const normalizedMatch = mappedEntries.find(([key]) => normalizeKey(key) === normalizedKey);
+  if (normalizedMatch) {
+    return buildResolvedLookup(normalizedMatch[1], normalizedMatch[0], `Key: ${normalizedMatch[0]}`);
   }
 
   for (const pattern of FOLDER_URL_PATTERNS) {
@@ -250,6 +244,18 @@ function resolveFolderLookup(input) {
   }
 
   return { folderId: "" };
+}
+
+function buildResolvedLookup(entry, key, lookupLabel) {
+  return {
+    folderId: entry.folderId,
+    label: entry.label || key,
+    lookupLabel
+  };
+}
+
+function normalizeKey(value) {
+  return value.toLowerCase().replace(/[\s_-]+/g, "");
 }
 
 async function fetchFolderMetadata(folderId) {
@@ -298,8 +304,9 @@ async function fetchFolderImages(folderId) {
     images.push(
       ...payload.files.map((file) => ({
         ...file,
-        thumbnailSrc: buildThumbnailUrl(file.id),
-        imageSrc: buildImageUrl(file.id)
+        thumbnailSrc: buildThumbnailUrl(file.id, 720),
+        viewerSrc: buildThumbnailUrl(file.id, 2200),
+        originalSrc: buildImageUrl(file.id)
       }))
     );
 
@@ -309,8 +316,8 @@ async function fetchFolderImages(folderId) {
   return images;
 }
 
-function buildThumbnailUrl(fileId) {
-  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w800`;
+function buildThumbnailUrl(fileId, width) {
+  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${width}`;
 }
 
 function buildImageUrl(fileId) {
@@ -338,26 +345,10 @@ function renderGallery(images) {
     img.src = image.thumbnailSrc;
     img.alt = image.name;
     img.loading = "lazy";
+    img.decoding = "async";
     img.referrerPolicy = "no-referrer";
 
-    const meta = document.createElement("span");
-    meta.className = "photo-meta";
-
-    const textWrap = document.createElement("span");
-
-    const name = document.createElement("span");
-    name.className = "photo-name";
-    name.textContent = image.name;
-
-    const date = document.createElement("span");
-    date.className = "photo-date";
-    date.textContent = formatDate(image.createdTime || image.modifiedTime);
-
-    textWrap.appendChild(name);
-    textWrap.appendChild(date);
-    meta.appendChild(textWrap);
     button.appendChild(img);
-    button.appendChild(meta);
     fragment.appendChild(button);
   });
 
@@ -370,14 +361,18 @@ function openLightbox(index) {
   }
 
   state.activeIndex = index;
+  state.lightboxOpen = true;
+  elements.lightbox.hidden = false;
+  elements.lightbox.setAttribute("aria-hidden", "false");
+  document.body.classList.add("lightbox-open");
   syncLightbox();
-  elements.lightbox.showModal();
 }
 
 function closeLightbox() {
-  if (elements.lightbox.open) {
-    elements.lightbox.close();
-  }
+  state.lightboxOpen = false;
+  elements.lightbox.hidden = true;
+  elements.lightbox.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("lightbox-open");
 }
 
 function syncLightbox() {
@@ -386,10 +381,26 @@ function syncLightbox() {
     return;
   }
 
-  elements.lightboxImage.src = image.imageSrc;
+  elements.lightboxImage.src = image.viewerSrc;
   elements.lightboxImage.alt = image.name;
   elements.lightboxCaption.textContent = image.name;
   elements.lightboxPosition.textContent = `${state.activeIndex + 1} / ${state.images.length}`;
+
+  preloadImage(image.viewerSrc);
+  preloadNeighbor((state.activeIndex + 1) % state.images.length);
+  preloadNeighbor((state.activeIndex - 1 + state.images.length) % state.images.length);
+}
+
+function preloadNeighbor(index) {
+  const image = state.images[index];
+  if (image) {
+    preloadImage(image.viewerSrc);
+  }
+}
+
+function preloadImage(src) {
+  const image = new Image();
+  image.src = src;
 }
 
 function showPreviousPhoto() {
@@ -417,10 +428,6 @@ function setLoading(isLoading) {
   elements.refreshButton.disabled = isLoading || !state.currentLookup;
 }
 
-function updateLookupSummary(label) {
-  elements.lookupPill.textContent = label || "Custom";
-}
-
 function showNotice(message) {
   elements.noticeBanner.hidden = false;
   elements.noticeBanner.textContent = message;
@@ -429,16 +436,4 @@ function showNotice(message) {
 function hideNotice() {
   elements.noticeBanner.hidden = true;
   elements.noticeBanner.textContent = "";
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "Date unavailable";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  }).format(new Date(value));
 }
